@@ -1,15 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { View, StyleSheet, TextInput } from "react-native";
-import { Button, Text } from "react-native-elements";
+import { View, StyleSheet, TextInput, Alert, ScrollView } from "react-native";
+import { Button, Text, Icon } from "react-native-elements";
 import { Client } from "paho-mqtt";
 
 const DriveScreen = () => {
-  const [foodDispenserStatus, setFoodDispenserStatus] = useState<string>("停止");
+  const [foodWeight, setFoodWeight] = useState<string>(""); // 上半部輸入欄位的食物重量
+  const [feedingTime, setFeedingTime] = useState<string>(""); // 下半部輸入的時間
+  const [feedingWeight, setFeedingWeight] = useState<string>(""); // 下半部輸入的投餵重量
+  const [monitorContent, setMonitorContent] = useState<string>("等待接收監控資料..."); // 中間 View 顯示的內容
   const [connectionStatus, setConnectionStatus] = useState("正在連接到 MQTT...");
-  const [mqttMessages, setMqttMessages] = useState<Record<string, string>>({});
-  const [message, setMessage] = useState<string>("");
-  const [isReconnecting, setIsReconnecting] = useState(false); // 標記是否正在重連
-  const [isConnected, setIsConnected] = useState(false); // 標記 MQTT 是否已連接
 
   const mqttClient = new Client(
     "7b67f158630548c4bc44852099288d08.s1.eu.hivemq.cloud",
@@ -18,6 +17,11 @@ const DriveScreen = () => {
   );
 
   const connectToMqtt = () => {
+    if (mqttClient.isConnected()) {
+      console.log("MQTT 已連接，無需重新連接");
+      return;
+    }
+
     mqttClient.connect({
       useSSL: true,
       userName: "tim031893",
@@ -25,113 +29,113 @@ const DriveScreen = () => {
       onSuccess: () => {
         console.log("MQTT 已連接");
         setConnectionStatus("MQTT 已成功連接");
-        setIsConnected(true); // 設定為已連接
-        mqttClient.subscribe("drive/foodDispenser");
-        setIsReconnecting(false); // 重連成功後重置狀態
+        mqttClient.subscribe("msg/RGMonitor");
       },
       onFailure: (error) => {
         console.error("MQTT 連接失敗:", error);
         setConnectionStatus(`MQTT 連接失敗: ${error.errorMessage || "未知錯誤"}`);
-        setIsReconnecting(false); // 重連失敗後重置狀態
-        setIsConnected(false); // 設定為未連接
       },
     });
   };
 
-  useEffect(() => {
-    mqttClient.onConnectionLost = (responseObject) => {
-      if (responseObject.errorCode !== 0) {
-        console.error("MQTT 連接丟失:", responseObject.errorMessage);
-        setConnectionStatus("MQTT 連接丟失，正在嘗試重連...");
-        setIsConnected(false); // 設定為未連接
-        if (!isReconnecting) {
-          setIsReconnecting(true);
-          setTimeout(connectToMqtt, 3000); // 3 秒後嘗試重連
-        }
-      }
-    };
+  const processMonitorContent = (message: string): string => {
+    const parts = message.split(",");
+    if (parts.length === 3) {
+      const [hh, mm, weight] = parts;
+      return `時間: ${hh}:${mm} 重量(公克): ${weight}`;
+    }
+    return "格式錯誤，無法顯示監控資料";
+  };
 
+  useEffect(() => {
     mqttClient.onMessageArrived = (message) => {
       const topic = message.destinationName;
       const payload = message.payloadString;
       console.log("收到 MQTT 消息:", topic, payload);
 
-      setMqttMessages((prev) => ({
-        ...prev,
-        [topic]: payload,
-      }));
-
-      if (topic === "drive/foodDispenser") {
-        setFoodDispenserStatus(payload === "ON" ? "運行中" : "停止");
+      if (topic === "msg/RGMonitor") {
+        const formattedContent = processMonitorContent(payload);
+        setMonitorContent(formattedContent);
       }
+    };
+
+    mqttClient.onConnectionLost = () => {
+      console.error("MQTT 連接丟失，正在嘗試重連...");
+      connectToMqtt();
     };
 
     connectToMqtt();
 
     return () => {
       if (mqttClient.isConnected()) {
-        mqttClient.unsubscribe("drive/foodDispenser");
+        mqttClient.unsubscribe("msg/RGMonitor");
         mqttClient.disconnect();
       }
     };
   }, []);
 
-  const toggleFoodDispenser = () => {
-    if (!isConnected) {
-      console.error("MQTT 尚未連接，無法切換飼料分配器");
-      setConnectionStatus("MQTT 尚未連接，請稍後再試");
-      return;
-    }
-
-    const newStatus = foodDispenserStatus === "運行中" ? "停止" : "運行中";
-    setFoodDispenserStatus(newStatus);
-    mqttClient.send("drive/foodDispenser", newStatus === "運行中" ? "ON" : "OFF", 0, false);
-  };
-
-  const sendMessage = () => {
-    if (!isConnected) {
-      if (!isReconnecting) {
-        console.error("MQTT 尚未連接，嘗試重連...");
-        setConnectionStatus("MQTT 尚未連接，嘗試重新連接...");
-        reconnectAndSend(message);
+  const sendMessage = async (channel: string, message: string) => {
+    if (!mqttClient.isConnected()) {
+      console.log(`頻道 ${channel} 尚未連接，正在嘗試重新連接...`);
+      try {
+        await new Promise((resolve, reject) => {
+          mqttClient.connect({
+            useSSL: true,
+            userName: "tim031893",
+            password: "Wayne0412907",
+            onSuccess: () => {
+              console.log(`頻道 ${channel} 重新連接成功`);
+              resolve(true);
+            },
+            onFailure: (error) => {
+              console.error(`頻道 ${channel} 重新連接失敗:`, error);
+              reject(new Error(`頻道 ${channel} 連接失敗`));
+            },
+          });
+        });
+      } catch (error) {
+        Alert.alert("錯誤", `無法連接到頻道 ${channel}，請檢查網絡或服務器設置`);
+        return;
       }
-      return;
     }
 
     try {
-      mqttClient.send("drive/msg", message, 0, false);
-      setMessage(""); // 發送後清空輸入框
-      console.log("訊息已發送:", message);
-      setConnectionStatus("訊息已發送成功");
+      mqttClient.send(channel, message, 0, false);
+      console.log(`已發送消息到 ${channel}:`, message);
     } catch (error) {
-      console.error("發送訊息失敗，嘗試重連:", error);
-      setConnectionStatus("發送失敗，正在嘗試重新連接...");
-      reconnectAndSend(message);
+      console.error(`發送消息到 ${channel} 失敗:`, error);
+      Alert.alert("錯誤", `消息發送失敗，請檢查頻道 ${channel} 的連接狀態`);
     }
   };
 
-  const reconnectAndSend = (msg: string) => {
-    if (isReconnecting) return; // 如果正在重連，避免重複觸發
+  const sendFoodWeight = () => {
+    if (!/^\d+$/.test(foodWeight) || parseInt(foodWeight, 10) >= 500) {
+      Alert.alert("格式錯誤", "食物重量必須是小於 500 的數字");
+      return;
+    }
+    sendMessage("drive/RN", foodWeight);
+    setFoodWeight("");
+  };
 
-    setIsReconnecting(true); // 設定為正在重連
-    connectToMqtt(); // 執行連線邏輯
+  const reloadFixedFeedingTime = () => {
+    sendMessage("msg/RGR", "110");
+  };
 
-    setTimeout(() => {
-      if (isConnected) {
-        try {
-          mqttClient.send("drive/msg", msg, 0, false);
-          setMessage(""); // 發送後清空輸入框
-          console.log("訊息已重新發送:", msg);
-          setConnectionStatus("訊息已發送成功");
-        } catch (error) {
-          console.error("重連後發送失敗:", error);
-          setConnectionStatus("重連後發送失敗，請檢查伺服器或網路");
-        }
-      } else {
-        setConnectionStatus("重新連接失敗，請稍後再試");
-      }
-      setIsReconnecting(false); // 重連結束，重置狀態
-    }, 3000); // 等待 3 秒確保連線成功
+  const sendFeedingInfo = () => {
+    if (!/^\d{4}$/.test(feedingTime) || parseInt(feedingTime.slice(0, 2)) > 23 || parseInt(feedingTime.slice(2, 4)) > 59) {
+      Alert.alert("格式錯誤", "投餵時間必須是四位數字，並對應 24 小時制時間");
+      return;
+    }
+
+    if (!/^\d+$/.test(feedingWeight) || parseInt(feedingWeight, 10) >= 500) {
+      Alert.alert("格式錯誤", "投餵重量必須是小於 500 的數字");
+      return;
+    }
+
+    const message = `${feedingTime},${feedingWeight}`;
+    sendMessage("drive/RG", message);
+    setFeedingTime("");
+    setFeedingWeight("");
   };
 
   return (
@@ -141,30 +145,46 @@ const DriveScreen = () => {
         <Text style={styles.statusText}>{connectionStatus}</Text>
       </View>
 
-      <View style={styles.box}>
-        <Text style={styles.normalText}>
-          飼料分配器狀態: <Text style={styles.statusText}>{foodDispenserStatus}</Text>
-        </Text>
-        <Button
-          title={foodDispenserStatus === "運行中" ? "停止飼料分配器" : "啟動飼料分配器"}
-          buttonStyle={styles.button}
-          onPress={toggleFoodDispenser}
-        />
-      </View>
-
-      <View style={styles.box}>
-        <Text style={styles.normalText}>MQTT 消息：</Text>
-        <Text>{JSON.stringify(mqttMessages, null, 2)}</Text>
-      </View>
-
+      {/* 上半部 */}
       <View style={styles.box}>
         <TextInput
           style={styles.input}
-          placeholder="輸入訊息發送到 MQTT"
-          value={message}
-          onChangeText={setMessage}
+          placeholder="輸入食物重量 (小於 500)"
+          value={foodWeight}
+          onChangeText={setFoodWeight}
         />
-        <Button title="發送訊息" buttonStyle={styles.button} onPress={sendMessage} />
+        <Button title="送出" buttonStyle={styles.button} onPress={sendFoodWeight} />
+      </View>
+
+      {/* 中間 Reload 按鈕與 View 格 */}
+      <View style={[styles.box]}>
+        <View style={styles.reloadButtonContainer}>
+          <Button
+            icon={<Icon name="reload1" type="antdesign" size={16} color="#fff" />}
+            buttonStyle={styles.reloadButton}
+            onPress={reloadFixedFeedingTime}
+          />
+        </View>
+        <ScrollView style={styles.monitorContainer}>
+          <Text style={styles.monitorText}>{monitorContent}</Text>
+        </ScrollView>
+      </View>
+
+      {/* 下半部 */}
+      <View style={styles.box}>
+        <TextInput
+          style={styles.input}
+          placeholder="輸入投餵時間 (格式: HHmm)"
+          value={feedingTime}
+          onChangeText={setFeedingTime}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="輸入投餵重量 (小於 500)"
+          value={feedingWeight}
+          onChangeText={setFeedingWeight}
+        />
+        <Button title="送出" buttonStyle={styles.button} onPress={sendFeedingInfo} />
       </View>
     </View>
   );
@@ -193,10 +213,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#333",
   },
-  normalText: {
+  monitorText: {
     fontSize: 16,
     color: "#333",
-    marginVertical: 10,
+    textAlign: "center",
   },
   box: {
     marginVertical: 10,
@@ -206,6 +226,7 @@ const styles = StyleSheet.create({
     shadowColor: "#000",
     shadowOpacity: 0.1,
     shadowRadius: 5,
+    width: "90%",
   },
   input: {
     borderWidth: 1,
@@ -219,6 +240,33 @@ const styles = StyleSheet.create({
     backgroundColor: "#00caca",
     borderRadius: 5,
     padding: 10,
+  },
+  reloadButtonContainer: {
+    alignItems: "flex-end",
+    marginBottom: 10,
+  },
+  reloadButton: {
+    backgroundColor: "#00caca",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  viewContainer: {
+    width: "100%",
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+  },
+  monitorContainer: {
+    marginVertical: 1,
+    width: "100%",
+    paddingVertical: 10,
+    paddingHorizontal: 50,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
   },
 });
 
