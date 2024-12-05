@@ -59,10 +59,14 @@ const MonitorScreen = () => {
           setWaterLevel(numericValue);
         }
       } else if (topic === "sensor/petWeight") {
-        const formattedMessage = processPetWeightMessage(payload);
-        if (formattedMessage) {
-          setPetWeightHistory((prevHistory) => [...prevHistory, formattedMessage].slice(-10));
-        }
+        // 將接收的十筆資料逐一解析
+        const records = payload.split("\n").filter((line) => line.trim() !== ""); // 按換行分割並移除空行
+        const formattedMessages = records
+          .map((record) => processPetWeightMessage(record))
+          .filter((formattedMessage) => formattedMessage !== null) as string[];
+
+        // 更新歷史記錄，僅保留最新十筆
+        setPetWeightHistory(formattedMessages.slice(-10));
       }
     };
 
@@ -89,7 +93,7 @@ const MonitorScreen = () => {
       const [yyyy, mm, dd, hh, min, weight] = parts;
       return `時間: ${yyyy}/${mm}/${dd} ${hh}:${min}, 體重: ${weight}`;
     }
-    console.warn("體重數據格式不正確:", message);
+    console.warn("數據格式不正確:", message);
     return null;
   };
 

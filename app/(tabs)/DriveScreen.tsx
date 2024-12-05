@@ -108,32 +108,30 @@ const DriveScreen = () => {
     }
   };
 
-  const sendFoodWeight = () => {
-    if (!/^\d+$/.test(foodWeight) || parseInt(foodWeight, 10) >= 500) {
-      Alert.alert("格式錯誤", "食物重量必須是小於 500 的數字");
-      return;
-    }
-    sendMessage("drive/RN", foodWeight);
-    setFoodWeight("");
-  };
-
-  const reloadFixedFeedingTime = () => {
-    sendMessage("msg/RGR", "110");
-  };
-
   const sendFeedingInfo = () => {
+    // 驗證投餵時間格式
     if (!/^\d{4}$/.test(feedingTime) || parseInt(feedingTime.slice(0, 2)) > 23 || parseInt(feedingTime.slice(2, 4)) > 59) {
       Alert.alert("格式錯誤", "投餵時間必須是四位數字，並對應 24 小時制時間");
       return;
     }
 
+    // 驗證投餵重量格式
     if (!/^\d+$/.test(feedingWeight) || parseInt(feedingWeight, 10) >= 500) {
       Alert.alert("格式錯誤", "投餵重量必須是小於 500 的數字");
       return;
     }
 
-    const message = `${feedingTime},${feedingWeight}`;
+    // 將時間解析為 hh 和 mm
+    const hh = feedingTime.slice(0, 2);
+    const mm = feedingTime.slice(2, 4);
+
+    // 組合訊息為 hh,mm,weight
+    const message = `${hh},${mm},${feedingWeight}`;
+
+    // 發送訊息到 drive/RG 頻道
     sendMessage("drive/RG", message);
+
+    // 清空輸入欄位
     setFeedingTime("");
     setFeedingWeight("");
   };
@@ -153,7 +151,7 @@ const DriveScreen = () => {
           value={foodWeight}
           onChangeText={setFoodWeight}
         />
-        <Button title="送出" buttonStyle={styles.button} onPress={sendFoodWeight} />
+        <Button title="送出" buttonStyle={styles.button} onPress={() => sendMessage("drive/RN", foodWeight)} />
       </View>
 
       {/* 中間 Reload 按鈕與 View 格 */}
@@ -162,7 +160,7 @@ const DriveScreen = () => {
           <Button
             icon={<Icon name="reload1" type="antdesign" size={16} color="#fff" />}
             buttonStyle={styles.reloadButton}
-            onPress={reloadFixedFeedingTime}
+            onPress={() => sendMessage("msg/RGR", "110")}
           />
         </View>
         <ScrollView style={styles.monitorContainer}>
@@ -253,18 +251,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  viewContainer: {
-    width: "100%",
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    backgroundColor: "#f5f5f5",
-    borderRadius: 8,
-  },
   monitorContainer: {
-    marginVertical: 1,
+    marginVertical: 10,
     width: "100%",
     paddingVertical: 10,
-    paddingHorizontal: 50,
+    paddingHorizontal: 20,
     backgroundColor: "#f5f5f5",
     borderRadius: 8,
   },

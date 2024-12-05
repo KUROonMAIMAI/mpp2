@@ -1,9 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, StyleSheet, Text, Image } from 'react-native';
-import { Client } from 'paho-mqtt';
+import { useFocusEffect } from '@react-navigation/native';
+import { Client, Message } from 'paho-mqtt';
 
 const Webcam = () => {
-    const [imageBase64, setImageBase64] = useState<string | null>(null);
+    const [imageBase64Current, setImageBase64Current] = useState<string | null>(null); // 當前顯示的圖片
+    const [imageBase64Next, setImageBase64Next] = useState<string | null>(null); // 下一張圖片
+    const [isLoading, setIsLoading] = useState(true); // 初次加載狀態
+    const clientRef = useRef<Client | null>(null);
 
     useEffect(() => {
         const client = new Client(
@@ -12,32 +16,30 @@ const Webcam = () => {
             'clientId_' + Math.random().toString(16).substr(2, 8)
         );
 
+        clientRef.current = client;
+
         client.onMessageArrived = (message: any) => {
             try {
-                console.log('Message received:', message);
-                const base64String = message.payloadString; // 直接取出 Base64 資料
-                console.log('Base64 Data:', base64String);
-                setImageBase64(base64String); // 直接更新 Base64 資料
+                const base64String = message.payloadString;
+                setImageBase64Next(base64String); // 將新數據暫存到下一張圖片
             } catch (error) {
                 console.error('Error processing message:', error);
             }
         };
 
-        // 連接到 MQTT Broker
         client.connect({
             useSSL: true,
             userName: 'tim031893',
             password: 'Wayne0412907',
             onSuccess: () => {
-                console.log('MQTT webcam已連接');
+                console.log('MQTT 客戶端已連接');
                 client.subscribe('sensor/Webcam');
             },
             onFailure: (error: any) => {
-                console.error('MQTT webcam連接失敗:', error);
+                console.error('MQTT 連接失敗:', error);
             },
         });
 
-        // 清理資源
         return () => {
             if (client.isConnected()) {
                 client.disconnect();
@@ -45,12 +47,41 @@ const Webcam = () => {
         };
     }, []);
 
+    useEffect(() => {
+        if (imageBase64Next) {
+            // 當接收到下一張圖片時
+            setImageBase64Current(imageBase64Next); // 切換當前圖片
+            if (isLoading) setIsLoading(false); // 第一次接收圖片後，結束加載狀態
+        }
+    }, [imageBase64Next]);
+
+    useFocusEffect(
+        React.useCallback(() => {
+            const sendMessage = (topic: string, message: string) => {
+                if (clientRef.current?.isConnected()) {
+                    const mqttMessage = new Message(message);
+                    mqttMessage.destinationName = topic;
+                    clientRef.current.send(mqttMessage);
+                    console.log(`已發送消息: ${message} 至 ${topic}`);
+                }
+            };
+
+            // 進入頁面時發送消息
+            sendMessage('drive/WebcamStart', 'pstart');
+
+            return () => {
+                // 離開頁面時發送消息
+                sendMessage('drive/WebcamStop', 'pstop');
+            };
+        }, [])
+    );
+
     return (
         <View style={styles.container}>
             <Text style={styles.title}>MQTT Base64 圖片顯示</Text>
-            {imageBase64 ? (
+            {!isLoading && imageBase64Current ? (
                 <Image
-                    source={{ uri: `data:image/png;base64,${imageBase64}` }}
+                    source={{ uri: `data:image/png;base64,${imageBase64Current}` }}
                     style={styles.image}
                 />
             ) : (
@@ -82,6 +113,7 @@ const styles = StyleSheet.create({
         resizeMode: 'contain',
         borderWidth: 1,
         borderColor: '#ddd',
+        backgroundColor: '#f8f8f8', // 背景顏色與頁面一致
     },
 });
 
