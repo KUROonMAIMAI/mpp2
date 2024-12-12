@@ -4,7 +4,7 @@ import { Button, Text, Icon } from "react-native-elements";
 import { Client } from "paho-mqtt";
 
 const MonitorScreen = () => {
-  const [waterLevel, setWaterLevel] = useState<number | null>(null);
+  const [waterLevel, setWaterLevel] = useState<string | null>(null);
   const [petWeightHistory, setPetWeightHistory] = useState<string[]>([]);
   const [connectionStatus, setConnectionStatus] = useState("正在連接到 MQTT...");
   const [mqttClient, setMqttClient] = useState<Client | null>(null);
@@ -54,18 +54,13 @@ const MonitorScreen = () => {
       console.log("收到 MQTT 消息:", topic, payload);
 
       if (topic === "sensor/waterLevel") {
-        const numericValue = parseInt(payload, 10);
-        if (!isNaN(numericValue)) {
-          setWaterLevel(numericValue);
-        }
+        handleWaterLevel(payload);
       } else if (topic === "sensor/petWeight") {
-        // 將接收的十筆資料逐一解析
         const records = payload.split("\n").filter((line) => line.trim() !== ""); // 按換行分割並移除空行
         const formattedMessages = records
           .map((record) => processPetWeightMessage(record))
           .filter((formattedMessage) => formattedMessage !== null) as string[];
 
-        // 更新歷史記錄，僅保留最新十筆
         setPetWeightHistory(formattedMessages.slice(-10));
       }
     };
@@ -86,6 +81,28 @@ const MonitorScreen = () => {
       }
     };
   }, []);
+
+  const handleWaterLevel = (payload: string) => {
+    const cleanPayload = payload.trim(); // 清理空格或換行符
+    console.log("清理後的水位數據:", cleanPayload);
+
+    // 檢查數據格式並更新狀態
+    switch (cleanPayload) {
+      case "00":
+        setWaterLevel("目前水位 : 沒水了");
+        break;
+      case "01":
+      case "10":
+        setWaterLevel("目前水位 : 低水位");
+        break;
+      case "11":
+        setWaterLevel("目前水位 : 高水位");
+        break;
+      default:
+        console.warn("接收到未知的水位數據:", cleanPayload);
+        setWaterLevel("無法識別的水位數據");
+    }
+  };
 
   const processPetWeightMessage = (message: string): string | null => {
     const parts = message.split(",");
@@ -124,7 +141,7 @@ const MonitorScreen = () => {
         <View style={styles.box}>
           <Text style={styles.dataTitle}>水位</Text>
           <Text style={styles.dataText}>
-            {waterLevel !== null ? `水位: ${waterLevel}` : "數據加載中..."}
+            {waterLevel !== null ? waterLevel : "數據加載中..."}
           </Text>
           <Button
             icon={<Icon name="reload1" type="antdesign" size={16} color="#fff" />}

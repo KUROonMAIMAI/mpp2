@@ -6,7 +6,7 @@ import { Button, Text } from 'react-native-elements';
 const HomeScreen = ({ navigation }: { navigation: any }) => {
   return (
     <ImageBackground
-      source={require('./assets/catt.jpg')} // 替換成你的本地圖片路徑
+      source={require('./assets/catt.jpg')}
       style={styles.backgroundImage}
     >
     <View style={styles.container}>
@@ -55,7 +55,7 @@ const styles = StyleSheet.create({
 
   backgroundImage: {
     flex: 1,
-    resizeMode: 'cover', // 確保圖片覆蓋整個背景
+    resizeMode: 'cover',
   },
 });
 

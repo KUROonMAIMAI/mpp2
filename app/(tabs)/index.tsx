@@ -5,7 +5,6 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import Icon from 'react-native-vector-icons/Feather';
 
-// 其他檔案的組件
 import DriveScreen from './DriveScreen';
 import MonitorScreen from './MonitorScreen';
 import Webcam from './Webcam';
@@ -44,7 +43,7 @@ const MainTabs = () => {
         },
         tabBarActiveTintColor: '#007bff',
         tabBarInactiveTintColor: 'gray',
-        headerShown: false, // 隱藏所有標題
+        headerShown: false,
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: '首頁' }} />

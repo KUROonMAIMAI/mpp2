@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
         resizeMode: 'contain',
         borderWidth: 1,
         borderColor: '#ddd',
-        backgroundColor: '#f8f8f8', // 背景顏色與頁面一致
+        backgroundColor: '#f8f8f8',
     },
 });
 
